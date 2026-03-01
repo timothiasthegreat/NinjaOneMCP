@@ -78,11 +78,11 @@ jobs:
           push: true
 
           # If you do NOT want multi-arch, change to: platforms: linux/amd64
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
 
           tags: |
-            ${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.version }}
-            ${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.major_minor }}
+            #${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.version }}
+            #${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.major_minor }}
             ${{ env.IMAGE_NAME }}:latest
 
           # Only push :latest for stable releases by using a build arg gate:
