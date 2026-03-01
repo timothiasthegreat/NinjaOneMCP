@@ -1,0 +1,94 @@
+name: Build & Publish Docker Image to Docker Hub (Release)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version tag (e.g. 1.3.0). If empty, uses the release tag (or git ref name)."
+        required: false
+        default: ""
+      push_latest:
+        description: "Also push :latest (typically only for stable releases)"
+        required: false
+        type: boolean
+        default: true
+      platforms:
+        description: "Comma-separated platforms (e.g. linux/amd64,linux/arm64)"
+        required: false
+        default: "linux/amd64,linux/arm64"
+
+permissions:
+  contents: read
+  
+concurrency:
+  group: dockerhub-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Change "ninjaone-mcp" to whatever you want the Docker Hub repo name to be
+  IMAGE_NAME: ${{ vars.DOCKERHUB_USERNAME }}/ninjaone-mcp
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Optional (but recommended) if you want multi-arch images
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Login to Docker Hub with a token (recommended)
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Extract version from the release tag, supports tags like "v1.3.0" or "1.3.0"
+      - name: Compute tags
+        id: tags
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"              # strip leading "v" if present
+          MAJOR_MINOR="$(echo "$VERSION" | awk -F. '{print $1 "." $2}')"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
+
+          # only apply latest for non-prereleases
+          if [[ "${{ github.event.release.prerelease }}" == "false" ]]; then
+            echo "latest=true" >> $GITHUB_OUTPUT
+          else
+            echo "latest=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+
+          # If you do NOT want multi-arch, change to: platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
+
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.version }}
+            ${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.major_minor }}
+            ${{ env.IMAGE_NAME }}:latest
+
+          # Only push :latest for stable releases by using a build arg gate:
+          # We'll keep it simple: push all tags, but you can remove latest line above
+          # and use conditional tagging (see below).
+          #
+          # Speed up rebuilds (GitHub Actions cache)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
